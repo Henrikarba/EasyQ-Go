@@ -12,7 +12,7 @@ import (
 // Version information
 const (
 	// Version is the current version of the EasyQ Go package
-	Version = "1.0.0"
+	Version = "0.1.0"
 
 	// APIVersion is the version of the API compatible with this package
 	APIVersion = "1.0"
