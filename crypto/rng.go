@@ -5,11 +5,9 @@ package crypto
 import (
 	"errors"
 
-	"github.com/Henrikarba/easyq-go"
-	"github.com/Henrikarba/easyq-go/internal/runtime"
+	easyq "github.com/Henrikarba/easyq-go"
+	"github.com/Henrikarba/easyq-go/bridge"
 )
-
-// Random number generation functions
 
 // RandomInt generates a true random integer between min (inclusive) and max (inclusive)
 // using quantum measurement.
@@ -19,13 +17,11 @@ import (
 //
 // Example:
 //
-//	import "github.com/Henrikarba/easyq-go/crypto"
-//
 //	// Generate a random number between 1 and 100
 //	num, err := crypto.RandomInt(1, 100)
 func RandomInt(min, max int) (int, error) {
 	if min >= max {
-		return 0, errors.New("minimum value must be less than maximum value")
+		return 0, easyq.ErrInvalidRange
 	}
 
 	// Ensure we're initialized
@@ -33,7 +29,7 @@ func RandomInt(min, max int) (int, error) {
 		return 0, err
 	}
 
-	return runtime.QuantumRNG(min, max)
+	return bridge.GenerateRandomInt(min, max)
 }
 
 // RandomBytes generates a sequence of random bytes using quantum measurement.
@@ -41,13 +37,11 @@ func RandomInt(min, max int) (int, error) {
 //
 // Example:
 //
-//	import "github.com/yourusername/easyq-go/crypto"
-//
 //	// Generate 32 random bytes (256 bits)
 //	bytes, err := crypto.RandomBytes(32)
 func RandomBytes(length int) ([]byte, error) {
 	if length <= 0 {
-		return nil, errors.New("length must be greater than zero")
+		return nil, easyq.ErrInvalidLength
 	}
 
 	// Ensure we're initialized
@@ -55,7 +49,7 @@ func RandomBytes(length int) ([]byte, error) {
 		return nil, err
 	}
 
-	return runtime.QuantumRandomBytes(length)
+	return bridge.GenerateRandomBytes(length)
 }
 
 // RandomPermutation generates a random permutation of integers from 0 to length-1
@@ -63,13 +57,11 @@ func RandomBytes(length int) ([]byte, error) {
 //
 // Example:
 //
-//	import "github.com/yourusername/easyq-go/crypto"
-//
 //	// Generate a random permutation of 0-9
 //	perm, err := crypto.RandomPermutation(10)
 func RandomPermutation(length int) ([]int, error) {
 	if length <= 0 {
-		return nil, errors.New("length must be greater than zero")
+		return nil, easyq.ErrInvalidLength
 	}
 
 	// Ensure we're initialized
@@ -85,7 +77,7 @@ func RandomPermutation(length int) ([]int, error) {
 
 	for i := length - 1; i > 0; i-- {
 		// Use quantum randomness to select an index
-		j, err := runtime.QuantumRNG(0, i)
+		j, err := RandomInt(0, i)
 		if err != nil {
 			return nil, err
 		}
@@ -95,4 +87,27 @@ func RandomPermutation(length int) ([]int, error) {
 	}
 
 	return permutation, nil
+}
+
+// FillRandomBuffer fills the provided buffer with random bytes
+// using quantum random number generation.
+func FillRandomBuffer(buffer []byte) error {
+	if len(buffer) == 0 {
+		return errors.New("buffer cannot be empty")
+	}
+
+	// Ensure we're initialized
+	if err := easyq.EnsureInitialized(); err != nil {
+		return err
+	}
+
+	// Generate random bytes
+	randomBytes, err := bridge.GenerateRandomBytes(len(buffer))
+	if err != nil {
+		return err
+	}
+
+	// Copy to the provided buffer
+	copy(buffer, randomBytes)
+	return nil
 }

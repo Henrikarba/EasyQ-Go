@@ -1,25 +1,16 @@
-// Package bridge provides direct communication with the C#/Q# quantum operations
-// via a .NET shared library.
+// Package bridge provides direct communication with the native quantum operations
+// via a DLL/shared library interface.
 package bridge
 
-// #cgo windows LDFLAGS: -L${SRCDIR}/../../lib/windows_${GOARCH} -lEasyQBridge
-// #cgo linux LDFLAGS: -L${SRCDIR}/../../lib/linux_${GOARCH} -lEasyQBridge
-// #cgo darwin LDFLAGS: -L${SRCDIR}/../../lib/darwin_${GOARCH} -lEasyQBridge
+// #cgo windows LDFLAGS: -L${SRCDIR}/../../lib/windows_amd64 -lEasyQBridge
+// #cgo linux LDFLAGS: -L${SRCDIR}/../../lib/linux_amd64 -lEasyQBridge
+// #cgo darwin LDFLAGS: -L${SRCDIR}/../../lib/darwin_amd64 -lEasyQBridge
 // #include <stdlib.h>
 // #include <stdint.h>
-//
-// // Function declarations that match the exports from the .NET DLL
-// extern int EasyQ_Initialize();
-// extern void EasyQ_Shutdown();
-// extern int EasyQ_ConfigureConnection(const char* config_json);
-// extern int EasyQ_Search(const char* items_json, const char* predicate_json,
-//                        const char* options_json, char** result_json);
-// extern int EasyQ_GenerateRandomInt(int min, int max, int* result);
-// extern int EasyQ_GenerateRandomBytes(int length, unsigned char* buffer);
-// extern int EasyQ_GenerateKey(const char* options_json, char** result_json);
-// extern void EasyQ_FreeString(char* str);
-import "C"
+// #include "bridge.h"
+
 import (
+	"C"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -99,8 +90,8 @@ func ConfigureConnection(config interface{}) error {
 	return nil
 }
 
-// QuantumSearch performs a quantum search using Grover's algorithm.
-func QuantumSearch(items interface{}, predicate interface{}, options interface{}) ([]interface{}, error) {
+// Search performs a quantum search using Grover's algorithm.
+func Search(items interface{}, predicate interface{}, options interface{}) ([]interface{}, error) {
 	bridgeMutex.Lock()
 	defer bridgeMutex.Unlock()
 
@@ -157,8 +148,8 @@ func QuantumSearch(items interface{}, predicate interface{}, options interface{}
 	return searchResults, nil
 }
 
-// QuantumRNG generates a random integer using quantum measurement.
-func QuantumRNG(min, max int) (int, error) {
+// GenerateRandomInt generates a random integer using quantum measurement.
+func GenerateRandomInt(min, max int) (int, error) {
 	bridgeMutex.Lock()
 	defer bridgeMutex.Unlock()
 
@@ -178,8 +169,8 @@ func QuantumRNG(min, max int) (int, error) {
 	return int(result), nil
 }
 
-// QuantumRandomBytes generates random bytes using quantum measurement.
-func QuantumRandomBytes(length int) ([]byte, error) {
+// GenerateRandomBytes generates random bytes using quantum measurement.
+func GenerateRandomBytes(length int) ([]byte, error) {
 	bridgeMutex.Lock()
 	defer bridgeMutex.Unlock()
 
@@ -199,8 +190,8 @@ func QuantumRandomBytes(length int) ([]byte, error) {
 	return buffer, nil
 }
 
-// QuantumKeyDistribution generates a key using quantum key distribution.
-func QuantumKeyDistribution(options interface{}) (map[string]interface{}, error) {
+// GenerateKey generates a key using quantum key distribution.
+func GenerateKey(options interface{}) (map[string]interface{}, error) {
 	bridgeMutex.Lock()
 	defer bridgeMutex.Unlock()
 

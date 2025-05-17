@@ -4,117 +4,24 @@ package search
 
 import (
 	"errors"
+	"fmt"
+	"reflect"
 
-	"github.com/Henrikarba/easyq-go"
-	"github.com/Henrikarba/easyq-go/internal/runtime"
+	easyq "github.com/Henrikarba/easyq-go"
+	"github.com/Henrikarba/easyq-go/bridge"
 )
-
-// IterationStrategy defines strategies for determining the number of Grover iterations
-type IterationStrategy int
-
-const (
-	// Optimal is standard optimal iterations (PI / (4 * angle) - 0.5)
-	Optimal IterationStrategy = iota
-
-	// SingleIteration is one iteration only (useful for small search spaces)
-	SingleIteration
-
-	// Aggressive is a more aggressive approach (PI / (4 * angle))
-	Aggressive
-
-	// Conservative is a conservative approach (PI / (4 * angle) - 1)
-	Conservative
-
-	// HalfOptimal is half the standard iterations (PI / (8 * angle))
-	HalfOptimal
-
-	// Custom is a custom iteration count using CustomIterationFactor and CustomIterationOffset
-	Custom
-)
-
-// SamplingStrategy defines strategies for estimating the number of matches in the database
-type SamplingStrategy int
-
-const (
-	// Auto automatically chooses between FullScan and Sampling based on database size
-	Auto SamplingStrategy = iota
-
-	// FullScan always scans the entire database (accurate but may be slow for large databases)
-	FullScan
-
-	// Sampling uses random sampling to estimate (faster but less accurate)
-	Sampling
-
-	// AssumeOne assumes only one match exists (fastest but only appropriate when you know there's exactly one match)
-	AssumeOne
-
-	// UserProvided uses a specific count provided by the user
-	UserProvided
-)
-
-// Options configures the behavior of quantum search operations
-type Options struct {
-	// MaxAttempts is the maximum number of search attempts to try before giving up.
-	// If set to nil, will continue trying until successful or resources are exhausted.
-	MaxAttempts *int
-
-	// MaxTargets is the maximum number of target items to sample for the oracle.
-	// If set to nil, will use all available targets.
-	MaxTargets *int
-
-	// IterationStrategy determines how to calculate the number of Grover iterations.
-	IterationStrategy IterationStrategy
-
-	// SamplingStrategy determines how to estimate the number of matches.
-	SamplingStrategy SamplingStrategy
-
-	// SampleSize is the number of samples to use when estimating match counts.
-	// Only used with SamplingStrategy.Sampling.
-	SampleSize int
-
-	// FullScanThreshold is the maximum database size to scan completely.
-	// Only used with SamplingStrategy.Auto.
-	FullScanThreshold int
-
-	// CustomIterationFactor multiplies the standard optimal iteration count.
-	// Only used when IterationStrategy is set to Custom.
-	CustomIterationFactor float64
-
-	// CustomIterationOffset adds to the iteration count.
-	// Only used when IterationStrategy is set to Custom.
-	CustomIterationOffset int
-
-	// EnableLogging determines whether to log detailed information about the quantum search process.
-	EnableLogging bool
-
-	// KnownMatchCount is an optional parameter to specify the exact number of matching items.
-	// This can improve performance when the exact count is known in advance.
-	KnownMatchCount *int
-}
-
-// Result represents the result of a quantum search operation
-type Result struct {
-	// Item is the found item
-	Item interface{}
-
-	// Index is the position of the item in the original collection
-	Index int
-}
 
 // DefaultOptions returns a new Options with default values.
-func DefaultOptions() Options {
-	attempts := 5
-	return Options{
-		MaxAttempts:           &attempts,
-		MaxTargets:            nil,
-		IterationStrategy:     Optimal,
-		SamplingStrategy:      Auto,
+func DefaultOptions() easyq.SearchOptions {
+	return easyq.SearchOptions{
+		MaxAttempts:           5,
+		IterationStrategy:     easyq.Optimal,
+		SamplingStrategy:      easyq.Auto,
 		SampleSize:            100,
 		FullScanThreshold:     1000,
 		CustomIterationFactor: 1.0,
 		CustomIterationOffset: 0,
 		EnableLogging:         false,
-		KnownMatchCount:       nil,
 	}
 }
 
@@ -124,12 +31,15 @@ func DefaultOptions() Options {
 //
 // Example:
 //
-//	import "github.com/yourusername/easyq-go/search"
-//
 //	items := []string{"apple", "banana", "cherry", "date"}
 //	predicate := func(item string) bool { return len(item) > 5 }
 //	results, err := search.Search(items, predicate, nil)
-func Search(items interface{}, predicate interface{}, options *Options) ([]Result, error) {
+func Search(items interface{}, predicate interface{}, options *easyq.SearchOptions) ([]easyq.SearchResult, error) {
+	// Validate inputs
+	if err := validateInputs(items, predicate); err != nil {
+		return nil, err
+	}
+
 	// Ensure we're initialized
 	if err := easyq.EnsureInitialized(); err != nil {
 		return nil, err
@@ -141,18 +51,59 @@ func Search(items interface{}, predicate interface{}, options *Options) ([]Resul
 		opts = *options
 	}
 
-	// Perform the search
-	return runtime.QuantumSearch(items, predicate, opts)
+	// Prepare mapped predicate for serialization
+	mappedPredicate, err := convertPredicate(predicate, reflect.TypeOf(items).Elem())
+	if err != nil {
+		return nil, err
+	}
+
+	// Perform the search through the bridge
+	rawResults, err := bridge.Search(items, mappedPredicate, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert raw results to SearchResult objects
+	results := make([]easyq.SearchResult, 0, len(rawResults))
+	for _, rawResult := range rawResults {
+		resultMap, ok := rawResult.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("unexpected result format: %T", rawResult)
+		}
+
+		var result easyq.SearchResult
+
+		// Extract index
+		indexValue, ok := resultMap["Index"]
+		if !ok {
+			return nil, errors.New("result missing Index field")
+		}
+		index, ok := indexValue.(float64)
+		if !ok {
+			return nil, fmt.Errorf("unexpected index type: %T", indexValue)
+		}
+		result.Index = int(index)
+
+		// Extract item
+		itemValue, ok := resultMap["Item"]
+		if !ok {
+			return nil, errors.New("result missing Item field")
+		}
+		result.Item = itemValue
+
+		results = append(results, result)
+	}
+
+	if len(results) == 0 {
+		return nil, easyq.ErrNoMatches
+	}
+
+	return results, nil
 }
 
 // SearchOne performs a quantum search and returns the first matching item.
 // This is more efficient than Search when only one result is needed.
-func SearchOne(items interface{}, predicate interface{}, options *Options) (*Result, error) {
-	// Ensure we're initialized
-	if err := easyq.EnsureInitialized(); err != nil {
-		return nil, err
-	}
-
+func SearchOne(items interface{}, predicate interface{}, options *easyq.SearchOptions) (*easyq.SearchResult, error) {
 	// Use default options if none provided
 	opts := DefaultOptions()
 	if options != nil {
@@ -160,17 +111,68 @@ func SearchOne(items interface{}, predicate interface{}, options *Options) (*Res
 	}
 
 	// Set to assume one match exists
-	opts.SamplingStrategy = AssumeOne
+	opts.SamplingStrategy = easyq.AssumeOne
+	opts.MaxAttempts = 3 // Less attempts since we only need one match
 
 	// Perform the search
-	results, err := runtime.QuantumSearch(items, predicate, opts)
+	results, err := Search(items, predicate, &opts)
 	if err != nil {
 		return nil, err
 	}
 
 	if len(results) == 0 {
-		return nil, errors.New("no matching items found")
+		return nil, easyq.ErrNoMatches
 	}
 
 	return &results[0], nil
+}
+
+// validateInputs checks that the items and predicate are valid for quantum search
+func validateInputs(items interface{}, predicate interface{}) error {
+	// Check if items is a slice or array
+	itemsType := reflect.TypeOf(items)
+	if itemsType == nil || (itemsType.Kind() != reflect.Slice && itemsType.Kind() != reflect.Array) {
+		return errors.New("items must be a slice or array")
+	}
+
+	// Check if predicate is a function
+	predicateType := reflect.TypeOf(predicate)
+	if predicateType == nil || predicateType.Kind() != reflect.Func {
+		return errors.New("predicate must be a function")
+	}
+
+	// Check if predicate has correct signature (func(T) bool)
+	if predicateType.NumIn() != 1 || predicateType.NumOut() != 1 {
+		return errors.New("predicate must have signature func(T) bool")
+	}
+
+	// Check if predicate input type matches items element type
+	if !predicateType.In(0).AssignableTo(itemsType.Elem()) {
+		return errors.New("predicate input type must match items element type")
+	}
+
+	// Check if predicate output type is bool
+	if predicateType.Out(0).Kind() != reflect.Bool {
+		return errors.New("predicate must return a boolean")
+	}
+
+	return nil
+}
+
+// convertPredicate converts a Go function to a format that can be serialized
+// and understood by the bridge implementation
+func convertPredicate(predicate interface{}, itemType reflect.Type) (interface{}, error) {
+	// For simplicity, we'll create a placeholder representation here
+	// In a real implementation, you might serialize the function logic or use a different approach
+
+	predicateValue := reflect.ValueOf(predicate)
+	predicateType := predicateValue.Type()
+
+	// Create a representation of the predicate
+	return map[string]interface{}{
+		"Type":           "Function",
+		"InputType":      itemType.String(),
+		"ReturnType":     predicateType.Out(0).String(),
+		"SerializedFunc": fmt.Sprintf("%v", predicate),
+	}, nil
 }
